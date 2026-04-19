@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Panel Electricidad</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #0a0e1a;
+      color: #e2e8f0;
+      font-family: 'Segoe UI', sans-serif;
+      min-height: 100vh;
+      padding: 24px;
+    }
+
+    #loading {
+      position: fixed; inset: 0;
+      background: #0a0e1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 999;
+      gap: 16px;
+    }
+
+    #loading .bolt { font-size: 3rem; animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    #loading p { color: #64748b; font-size: 0.9rem; }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 28px;
+      flex-wrap: wrap;
+    }
+
+    .header-left { display: flex; align-items: center; gap: 14px; }
+    .bolt-icon { font-size: 2.2rem; filter: drop-shadow(0 0 10px #f59e0b); }
+
+    header h1 { font-size: 1.6rem; font-weight: 700; color: #f8fafc; }
+
+    #last-update {
+      font-size: 0.75rem;
+      color: #334155;
+      background: #1e293b;
+      border: 1px solid #1e3a5f;
+      padding: 6px 12px;
+      border-radius: 999px;
+    }
+
+    #last-update span { color: #60a5fa; }
+
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+
+    .kpi {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 1px solid #1e3a5f;
+      border-radius: 14px;
+      padding: 20px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .kpi::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 3px;
+      border-radius: 14px 14px 0 0;
+    }
+
+    .kpi.blue::before   { background: linear-gradient(90deg, #3b82f6, #60a5fa); }
+    .kpi.yellow::before { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+    .kpi.green::before  { background: linear-gradient(90deg, #10b981, #34d399); }
+    .kpi.purple::before { background: linear-gradient(90deg, #8b5cf6, #a78bfa); }
+
+    .kpi-label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 8px; }
+    .kpi-value { font-size: 1.9rem; font-weight: 800; line-height: 1; }
+    .kpi.blue .kpi-value   { color: #60a5fa; }
+    .kpi.yellow .kpi-value { color: #fbbf24; }
+    .kpi.green .kpi-value  { color: #34d399; }
+    .kpi.purple .kpi-value { color: #a78bfa; }
+    .kpi-sub { font-size: 0.75rem; color: #475569; margin-top: 6px; }
+
+    .charts-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 20px;
+    }
+
+    @media (max-width: 768px) { .charts-grid { grid-template-columns: 1fr; } }
+
+    .chart-card {
+      background: linear-gradient(135deg, #1e293b, #0f172a);
+      border: 1px solid #1e3a5f;
+      border-radius: 14px;
+      padding: 22px;
+    }
+
+    .chart-card.full { grid-column: 1 / -1; }
+    .chart-title { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin-bottom: 16px; }
+    canvas { max-height: 280px; }
+
+    .table-wrap { overflow-x: auto; margin-top: 4px; }
+
+    table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+    thead th {
+      text-align: left; padding: 8px 12px; color: #64748b;
+      font-weight: 600; font-size: 0.72rem; text-transform: uppercase;
+      border-bottom: 1px solid #1e3a5f;
+    }
+    tbody tr { border-bottom: 1px solid #0f172a; transition: background 0.15s; }
+    tbody tr:hover { background: #1e293b; }
+    tbody td { padding: 9px 12px; color: #cbd5e1; }
+    tbody td:first-child { color: #94a3b8; font-weight: 500; }
+
+    .chip { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.72rem; font-weight: 600; }
+    .chip-blue   { background: #1e3a5f; color: #60a5fa; }
+    .chip-rose   { background: #3b1f3a; color: #f472b6; }
+    .chip-indigo { background: #1e1f4f; color: #818cf8; }
+
+    footer { text-align: center; font-size: 0.7rem; color: #334155; margin-top: 28px; }
+  </style>
+</head>
+<body>
+
+<div id="loading">
+  <span class="bolt">⚡</span>
+  <p>Cargando datos desde Google Sheets…</p>
+</div>
+
+<header>
+  <div class="header-left">
+    <span class="bolt-icon">⚡</span>
+    <div>
+      <h1>Panel de Consumo Eléctrico</h1>
+    </div>
+  </div>
+  <div id="last-update">Actualizado: <span id="update-time">—</span></div>
+</header>
+
+<div class="kpi-grid">
+  <div class="kpi yellow">
+    <div class="kpi-label">Monto Último Mes</div>
+    <div class="kpi-value" id="kpi-monto">—</div>
+    <div class="kpi-sub" id="kpi-mes">—</div>
+  </div>
+  <div class="kpi blue">
+    <div class="kpi-label">kW Consumidos</div>
+    <div class="kpi-value" id="kpi-kw">—</div>
+    <div class="kpi-sub">kWh</div>
+  </div>
+  <div class="kpi green">
+    <div class="kpi-label">Valor 1 kWh</div>
+    <div class="kpi-value" id="kpi-kwval">—</div>
+    <div class="kpi-sub">tarifa vigente</div>
+  </div>
+  <div class="kpi purple">
+    <div class="kpi-label">Lectura Medidor</div>
+    <div class="kpi-value" id="kpi-lectura">—</div>
+    <div class="kpi-sub">kWh acumulado</div>
+  </div>
+</div>
+
+<div class="charts-grid">
+  <div class="chart-card full">
+    <div class="chart-title">⚡ Consumo mensual (kWh)</div>
+    <canvas id="kwChart"></canvas>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title">💰 Monto total por mes ($)</div>
+    <canvas id="montoChart"></canvas>
+  </div>
+  <div class="chart-card">
+    <div class="chart-title">👥 Distribución último mes</div>
+    <canvas id="donutChart"></canvas>
+  </div>
+  <div class="chart-card full">
+    <div class="chart-title">📊 Pago por persona — histórico ($)</div>
+    <canvas id="stackedChart"></canvas>
+  </div>
+</div>
+
+<div class="chart-card">
+  <div class="chart-title">📋 Historial completo</div>
+  <div class="table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th>Mes</th><th>Monto</th><th>kWh</th><th>$/kWh</th>
+          <th>Papa</th><th>Vero</th><th>Hans</th>
+        </tr>
+      </thead>
+      <tbody id="tablaBody"></tbody>
+    </table>
+  </div>
+</div>
+
+<footer>Datos en vivo desde Google Sheets · Se actualiza automáticamente cada 5 minutos</footer>
+
+<script>
+  // ── CONFIG ──────────────────────────────────────────────
+  const SHEET_ID   = "1004pnx79NdTrqDrr5ukJpru5sUtXoi6yOxKzF-x0y64";
+  const REFRESH_MS = 5 * 60 * 1000; // 5 minutos
+
+  // ── UTILS ────────────────────────────────────────────────
+  const clean = s => parseFloat((s || "0").toString().replace(/[$.,\s]/g, "")) || 0;
+  const fmt   = v => "$" + Math.round(v).toLocaleString("es-CL");
+
+  let charts = {};
+
+  function destroyCharts() {
+    Object.values(charts).forEach(c => c && c.destroy());
+    charts = {};
+  }
+
+  // ── RENDER ────────────────────────────────────────────────
+  // Recibe array de objetos con los campos ya mapeados
+  function render(data) {
+
+    if (!data.length) return;
+
+    const last   = data[data.length - 1];
+    const meses  = data.map(d => d.mes);
+
+    // KPIs
+    document.getElementById("kpi-monto").textContent   = fmt(last.monto);
+    document.getElementById("kpi-kw").textContent      = last.kw + " kWh";
+    document.getElementById("kpi-kwval").textContent   = fmt(last.kwval);
+    document.getElementById("kpi-lectura").textContent = last.lectura;
+    document.getElementById("kpi-mes").textContent     = last.mes;
+    document.getElementById("update-time").textContent =
+      new Date().toLocaleTimeString("es-CL", { hour: "2-digit", minute: "2-digit" });
+
+    destroyCharts();
+
+    const C = { yellow:"#fbbf24", blue:"#60a5fa", pink:"#f472b6",
+                indigo:"#818cf8", red:"#f87171", grid:"#1e293b", text:"#64748b" };
+    Chart.defaults.color = C.text;
+    Chart.defaults.font.family = "'Segoe UI', sans-serif";
+    const gridOpts = { color: C.grid, drawBorder: false };
+    const ticksFmt = v => "$" + (v/1000).toFixed(0) + "k";
+
+    // 1. Línea kWh
+    charts.kw = new Chart(document.getElementById("kwChart"), {
+      type: "line",
+      data: {
+        labels: meses,
+        datasets: [{
+          label: "kWh", data: data.map(d => d.kw),
+          borderColor: C.yellow, backgroundColor: "rgba(251,191,36,0.08)",
+          borderWidth: 2.5, pointBackgroundColor: C.yellow,
+          pointRadius: 5, tension: 0.4, fill: true
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: { x: { grid: gridOpts }, y: { grid: gridOpts, beginAtZero: true } },
+        responsive: true, maintainAspectRatio: true
+      }
+    });
+
+    // 2. Barras monto
+    const maxMonto = Math.max(...data.map(d => d.monto));
+    charts.monto = new Chart(document.getElementById("montoChart"), {
+      type: "bar",
+      data: {
+        labels: meses,
+        datasets: [{
+          label: "Monto", data: data.map(d => d.monto),
+          backgroundColor: data.map(d => d.monto === maxMonto ? C.red : "rgba(96,165,250,0.7)"),
+          borderRadius: 6, borderSkipped: false
+        }]
+      },
+      options: {
+        plugins: { legend: { display: false } },
+        scales: { x: { grid: gridOpts }, y: { grid: gridOpts, beginAtZero: true, ticks: { callback: ticksFmt } } },
+        responsive: true, maintainAspectRatio: true
+      }
+    });
+
+    // 3. Dona último mes
+    charts.donut = new Chart(document.getElementById("donutChart"), {
+      type: "doughnut",
+      data: {
+        labels: ["Papa", "Vero", "Hans"],
+        datasets: [{
+          data: [last.papa, last.vero, last.hans],
+          backgroundColor: [C.blue, C.pink, C.indigo],
+          borderWidth: 0, hoverOffset: 8
+        }]
+      },
+      options: {
+        cutout: "65%",
+        plugins: {
+          legend: { position: "bottom", labels: { padding: 16, boxWidth: 12 } },
+          tooltip: { callbacks: { label: ctx => " " + fmt(ctx.parsed) } }
+        },
+        responsive: true, maintainAspectRatio: true
+      }
+    });
+
+    // 4. Barras apiladas
+    charts.stacked = new Chart(document.getElementById("stackedChart"), {
+      type: "bar",
+      data: {
+        labels: meses,
+        datasets: [
+          { label: "Papa", data: data.map(d => d.papa), backgroundColor: "rgba(96,165,250,0.85)",  borderRadius: 4 },
+          { label: "Vero", data: data.map(d => d.vero), backgroundColor: "rgba(244,114,182,0.85)", borderRadius: 4 },
+          { label: "Hans", data: data.map(d => d.hans), backgroundColor: "rgba(129,140,248,0.85)", borderRadius: 4 }
+        ]
+      },
+      options: {
+        plugins: {
+          legend: { position: "top", labels: { padding: 16, boxWidth: 12 } },
+          tooltip: { callbacks: { label: ctx => " " + ctx.dataset.label + ": " + fmt(ctx.parsed.y) } }
+        },
+        scales: {
+          x: { stacked: true, grid: gridOpts },
+          y: { stacked: true, grid: gridOpts, beginAtZero: true, ticks: { callback: ticksFmt } }
+        },
+        responsive: true, maintainAspectRatio: true
+      }
+    });
+
+    // Tabla
+    const tbody = document.getElementById("tablaBody");
+    tbody.innerHTML = "";
+    data.forEach((d, i) => {
+      const isLast = i === data.length - 1;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${d.mes}${isLast ? ' <span class="chip chip-blue">actual</span>' : ''}</td>
+        <td>${fmt(d.monto)}</td>
+        <td>${d.kw} kWh</td>
+        <td>${fmt(d.kwval)}</td>
+        <td><span class="chip chip-blue">${fmt(d.papa)}</span></td>
+        <td><span class="chip chip-rose">${fmt(d.vero)}</span></td>
+        <td><span class="chip chip-indigo">${fmt(d.hans)}</span></td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  // ── FETCH via proxy CORS (funciona local y en web) ────────
+  const CSV_DIRECT = "https://docs.google.com/spreadsheets/d/e/2PACX-1vSvHv7q32A6Fw9X3MOU-Cnrgqy8opd-rE9chG4Rc01xtAvB2xH5G6Z6RiC9q61s3Ct3GqLT4xdNjabx/pub?gid=0&single=true&output=csv";
+  const CSV_PROXY  = `https://api.allorigins.win/raw?url=${encodeURIComponent(CSV_DIRECT)}`;
+
+  function parseCSV(text) {
+    return text.trim().split("\n").map(line => {
+      const cols = []; let cur = ""; let inQ = false;
+      for (const ch of line) {
+        if (ch === '"') { inQ = !inQ; }
+        else if (ch === "," && !inQ) { cols.push(cur.trim()); cur = ""; }
+        else { cur += ch; }
+      }
+      cols.push(cur.trim());
+      return cols;
+    });
+  }
+
+  function csvToData(rows) {
+    // rows[0] = encabezados
+    // N,FECHA,MONTO,Lectura,kw consumido,Valor 1 KWAT,...,Papa+agua[11],Vero+Agua[16],Hans+Agua[21]
+    return rows.slice(1)
+      .filter(r => r[1] && r[2])
+      .map(r => ({
+        mes:     r[1].replace("2025","25").replace("2026","26"),
+        monto:   clean(r[2]),
+        kw:      clean(r[4]),
+        kwval:   clean(r[5]),
+        lectura: r[3] || "—",
+        papa:    clean(r[11]),
+        vero:    clean(r[16]),
+        hans:    clean(r[21]),
+      }));
+  }
+
+  async function tryFetch(url) {
+    const res = await fetch(url, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    return res.text();
+  }
+
+  async function loadData() {
+    try {
+      let text;
+      try {
+        text = await tryFetch(CSV_DIRECT);
+      } catch {
+        text = await tryFetch(CSV_PROXY);
+      }
+      const rows = parseCSV(text);
+      const data = csvToData(rows);
+      if (!data.length) throw new Error("sin datos");
+      render(data);
+      document.getElementById("loading").style.display = "none";
+    } catch(e) {
+      showError();
+    }
+  }
+
+  function showError() {
+    document.getElementById("loading").innerHTML =
+      `<span style="font-size:2rem">⚠️</span>
+       <p style="color:#f87171">No se pudo cargar el Sheet.</p>
+       <p style="color:#334155;font-size:0.75rem;margin-top:8px">
+         Google Sheets → Archivo → Compartir → Publicar en la web → CSV → Publicar
+       </p>`;
+  }
+
+  loadData();
+  setInterval(loadData, REFRESH_MS);
+</script>
+</body>
+</html>
